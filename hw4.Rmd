@@ -1,0 +1,178 @@
+---
+title: "STA 5331: Homework 4"
+author: Brandon Owens
+output: html_document
+date: "2024-03-13"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r}
+library(ggplot2)
+library(dplyr)
+```
+
+```{r write_data}
+p1 <- c(11, 17, 16, 14, 15)
+p2 <- c(12, 10, 15, 19, 11)
+p3 <- c(23, 20, 18, 17)
+p4 <- c(27, 33, 22, 26, 28)
+
+sigma <- 3.25
+```
+
+# Part IIa:
+
+```{r part_a}
+p1_sample_mean <- mean(p1)
+p2_sample_mean <- mean(p2)
+p3_sample_mean <- mean(p3)
+p4_sample_mean <- mean(p4)
+
+p1_std_error <- sigma / sqrt(length(p1))
+p2_std_error <- sigma / sqrt(length(p2))
+p3_std_error <- sigma / sqrt(length(p3))
+p4_std_error <- sigma / sqrt(length(p4))
+
+package_means <- c(p1_sample_mean, p2_sample_mean, p3_sample_mean, p4_sample_mean)
+package_std_errors <- c(p1_std_error, p2_std_error, p3_std_error, p4_std_error)
+
+```
+
+> * **"Package 1 Mean: 14.6"**
+> * **"Package 2 Mean: 13.4"**
+> * **"Package 3 Mean: 19.5"**
+> * **"Package 4 Mean: 27.2"**
+> * **"Package 1 Std. Error: 1.45344418537486"**
+> * **"Package 2 Std. Error: 1.45344418537486"**
+> * **"Package 3 Std. Error: 1.625"**
+> * **"Package 4 Std. Error: 1.45344418537486"**
+
+
+# Part IIb:
+
+```{r part_b}
+
+package_std_errors <- package_std_errors^2
+
+mu_hat <- function(tau, y, variance){
+  sum(y/(variance + tau^2))/sum(1/(variance + tau^2))
+}
+
+V_mu <- function(tau, y, variance){
+  1/sum(1/(tau^2 + variance))
+}
+
+n_grid <- 2000
+tau_grid <- seq(.01, 40, length = n_grid)
+log_p_tau <- rep(NA, n_grid)
+
+for (i in 1:n_grid){
+  mu <- mu_hat(tau_grid[i], package_means, package_std_errors)
+  V <- V_mu(tau_grid[i], package_means, package_std_errors)
+  log_p_tau[i] <- .5*log(V) - .5*sum(log(package_std_errors + tau_grid[i]^2)) - .5*sum((package_means - mu)^2/(package_std_errors + tau_grid[i]^2))
+}
+
+log_p_tau <- log_p_tau - max(log_p_tau)
+p_tau <- exp(log_p_tau)
+p_tau <- p_tau/sum(p_tau)
+n_sims <- 1000
+
+tau <- sample(tau_grid, n_sims, replace=TRUE, prob=p_tau)
+
+marg_post_tau <- ggplot(data = NULL, aes(x = tau)) +
+  geom_histogram(binwidth = 1, fill = "skyblue", color = "black") +
+  labs(title = "Question 2 Part B", x = "Tau", y = "Frequency") +
+  theme_minimal()
+
+marg_post_tau
+```
+
+> **The histogram appears to have the largest frequency of values (mode) where tau is around 5 to 7. It almost looks like a normal distribution itself that has been skewed right with a pretty long tail.**
+
+
+# Part IIc:
+
+```{r parc_c}
+J <- 4
+mu <- rep(NA, n_sims)
+theta <- array(NA, c(n_sims, J))
+CI <- array(NA, c(J, 2))
+
+for (i in 1:n_sims){
+  mu[i] <- rnorm(1, mu_hat(tau[i], package_means, package_std_errors), sqrt(V_mu(tau[i], package_means, package_std_errors)))
+  theta_mean <- (mu[i]/tau[i]^2 + package_means/package_std_errors)/(1/tau[i]^2 + 1/package_std_errors)
+  theta_sd <- sqrt(1/(1/tau[i]^2 + 1/package_std_errors))
+  theta[i,] <- rnorm(J, theta_mean, theta_sd)
+}
+
+for (i in 1:J){
+  CI[i,] <- quantile(theta[,i], probs = c(0.025, 0.975))
+  post_theta <- ggplot(data = data.frame(theta = theta[,i]), aes(x = theta)) +
+    geom_histogram(fill = "skyblue", color = "black") +
+    geom_vline(aes(xintercept = CI[i, 1]), color = "red", linetype = "dashed") + 
+    geom_vline(aes(xintercept = CI[i, 2]), color = "red", linetype = "dashed") +
+    geom_text(aes(x = CI[i, 1], label = "Lower CI"), y = 50, vjust = -0.5, color = "red") +
+    geom_text(aes(x = CI[i, 2], label = "Upper CI"), y = 50, vjust = -0.5, color = "red") +
+    labs(title = paste("Question 2 Part C w/ 95 Percent CI: J = ", i), x = "Theta", y = "Frequency") +
+    theme_minimal()
+  print(post_theta)
+}
+```
+
+> **The leading package would be the fourth package in this case. It's mean sales at the end of the study is around 26 to 28 and although it has a decent amount of variability, its 95% confidence interval's lower bound is higher than any of the other package's means.**
+
+
+# Part IId:
+
+```{r part_d}
+y_draws <- rep(NA, n_sims)
+theta_j_draw = sample(theta[,4], size = 1)
+y_draws <- rnorm(n_sims, theta_j_draw, sigma^2)
+simulated_mean <- mean(y_draws)
+simulated_variance <- var(y_draws)/n_sims
+
+for (i in 1:n_grid){
+  mu <- mu_hat(tau_grid[i], simulated_mean, simulated_variance)
+  V <- V_mu(tau_grid[i], simulated_mean, simulated_variance)
+  log_p_tau[i] <- .5*log(V) - .5*sum(log(simulated_variance + tau_grid[i]^2)) - .5*sum((simulated_mean - mu)^2/(simulated_variance + tau_grid[i]^2))
+}
+
+log_p_tau <- log_p_tau - max(log_p_tau)
+p_tau <- exp(log_p_tau)
+p_tau <- p_tau/sum(p_tau)
+sim_tau <- sample(tau_grid, n_sims, replace=TRUE, prob=p_tau)
+
+sim_theta <- rep(NA, n_sims)
+
+for (i in 1:n_sims){
+  mu[i] <- rnorm(1, mu_hat(sim_tau[i], simulated_mean, simulated_variance), sqrt(V_mu(sim_tau[i], simulated_mean, simulated_variance)))
+  theta_mean <- (mu[i]/sim_tau[i]^2 + simulated_mean/simulated_variance)/(1/sim_tau[i]^2 + 1/simulated_variance)
+  theta_sd <- sqrt(1/(1/sim_tau[i]^2 + 1/simulated_mean))
+  sim_theta[i] <- rnorm(1, theta_mean, theta_sd)
+}
+
+
+theta_tilde <- mean(sim_theta[i])
+simulated_y <- rnorm(n_sims, theta_tilde, sigma^2)
+CI <- quantile(simulated_y, probs = c(0.025, 0.975))
+
+post_pred_y <- ggplot(data = data.frame(simulated_y = simulated_y), aes(x = simulated_y)) +
+    geom_histogram(fill = "skyblue", color = "black") +
+    geom_vline(aes(xintercept = CI[1]), color = "red", linetype = "dashed") + 
+    geom_vline(aes(xintercept = CI[2]), color = "red", linetype = "dashed") +
+    geom_text(aes(x = CI[1], label = "Lower CI"), y = 50, vjust = -0.5, color = "red") +
+    geom_text(aes(x = CI[2], label = "Upper CI"), y = 50, vjust = -0.5, color = "red") +
+    labs(title = "Question 2 Part D w/ 95 Percent CI: J = 4", x = "Simulated_Y", y = "Frequency") +
+    theme_minimal()
+
+post_pred_y
+
+```
+
+> **The simulated mean value of the posterior predictive is slightly higher than the posterior itself. Additionally, the variance is much, much larger. My 95% CI from the posterior ranges from roughly 24 to 30; meanwhile, the 95% CI from this posterior predictive ranges from about 9 to 51. This demonstrates that there is a much higher increase in variability when trying to create a posterior predictive among the sales from the 5 original data points to predict from for this packaging.**
+
+
